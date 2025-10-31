@@ -313,6 +313,22 @@ python -m scripts.realtime_inference --inference_config configs\inference\realti
 # - --version v15 -> --version v1
 ```
 
+#### Streaming Input Inference (chunked audio)
+The `scripts/streaming_inference_v2.py` entry point runs MuseTalk on streaming audio without knowing the total length in advance. It buffers 80 ms audio chunks, maintains a configurable Whisper lookahead, and mixes the generated frames in real time.
+
+```bash
+python scripts/streaming_inference_v2.py \
+  --audio_path ./data/audio/sun.wav \
+  --video_path ./data/video/sun.mp4 \
+  --output_path ./results/streaming_v2_output.mp4 \
+  --lookahead_chunks 2 \
+  --fps 25
+```
+
+- `--lookahead_chunks` keeps `n × 80 ms` future audio buffered for prosody-aware Whisper features (default `0`).
+- Pass `--no_audio_playback` if you do not want local monitoring audio; otherwise install `sounddevice` (`pip install sounddevice`) so the script can keep playback synchronized with the generated frames.
+- Progress logs include chunk-level buffer depth, frames generated, and playback status to help tune latency/quality trade-offs.
+
 The configuration file `configs/inference/test.yaml` contains the inference settings, including:
 - `video_path`: Path to the input video, image file, or directory of images
 - `audio_path`: Path to the input audio file

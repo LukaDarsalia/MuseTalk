@@ -1,0 +1,4 @@
+task_0:
+ video_path: "pidadoba.mp4"
+ audio_path: "pidadoba.wav"
+ bbox_shift: 0
