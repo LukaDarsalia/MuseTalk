@@ -164,6 +164,28 @@ def flush_audio_chunks(
         pending_chunks.pop(0)
 
 
+def ensure_avatar_assets(avatar_path: str) -> None:
+    required_files = [
+        os.path.join(avatar_path, "latents.pt"),
+        os.path.join(avatar_path, "coords.pkl"),
+        os.path.join(avatar_path, "mask_coords.pkl"),
+    ]
+    required_dirs = [
+        os.path.join(avatar_path, "full_imgs"),
+        os.path.join(avatar_path, "mask"),
+    ]
+
+    missing = [p for p in required_files if not os.path.isfile(p)]
+    missing.extend([d for d in required_dirs if not os.path.isdir(d)])
+
+    if missing:
+        report = "\n  ".join(missing)
+        raise FileNotFoundError(
+            f"Avatar assets are incomplete at '{avatar_path}':\n  {report}\n"
+            "Create them using scripts/create_avatar.py in avatar_venv."
+        )
+
+
 @torch.no_grad()
 def streaming_inference(args):
     """
@@ -174,7 +196,6 @@ def streaming_inference(args):
     print("MUSETALK STREAMING INFERENCE")
     print("="*80)
     print(f"Audio: {args.audio_path}")
-    print(f"Video: {args.video_path}")
     print(f"Output: {args.output_path}")
     print(f"Batch size: {args.batch_size}")
     print(f"Video FPS: {args.fps}")
@@ -237,6 +258,21 @@ def streaming_inference(args):
         weight_dtype=weight_dtype,
     )
 
+    avatar_id = args.avatar_id
+    if avatar_id is None:
+        raise ValueError("--avatar_id is required when running streaming inference.")
+
+    if args.avatar_root:
+        avatar_base_path = os.path.join(args.avatar_root, avatar_id)
+    else:
+        if args.version == "v15":
+            avatar_base_path = os.path.join(args.result_dir, args.version, "avatars", avatar_id)
+        else:
+            avatar_base_path = os.path.join(args.result_dir, "avatars", avatar_id)
+
+    print(f"Avatar ID: {avatar_id}")
+    print(f"Avatar cache: {avatar_base_path}")
+
     avatar_config = AvatarConfig(
         version=args.version,
         result_root=args.result_dir,
@@ -249,18 +285,19 @@ def streaming_inference(args):
         audio_padding_length_right=args.audio_padding_length_right,
     )
 
-    avatar_id = args.avatar_id or os.path.splitext(os.path.basename(args.video_path))[0]
     bbox_shift = 0 if args.version == "v15" else args.bbox_shift
+
+    ensure_avatar_assets(avatar_base_path)
 
     avatar = Avatar(
         avatar_id=avatar_id,
-        video_path=args.video_path,
+        video_path=None,
         bbox_shift=bbox_shift,
-        preparation=True,
+        preparation=False,
         config=avatar_config,
         runtime=avatar_runtime,
         interactive=False,
-        force_recreate=args.force_recreate,
+        avatar_path_override=avatar_base_path,
     )
     print(f"Avatar '{avatar_id}' prepared with {avatar.prepared_length()} frames in cycle\n")
 
@@ -531,7 +568,6 @@ def streaming_inference(args):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Clean streaming inference for MuseTalk")
     parser.add_argument("--audio_path", type=str, default="./data/audio/piradoba.wav")
-    parser.add_argument("--video_path", type=str, default="./data/video/piradoba.mp4")
     parser.add_argument("--output_path", type=str, default="./results/streaming_v2_output.mp4")
     parser.add_argument("--gpu_id", type=int, default=0)
     parser.add_argument("--version", type=str, default="v15", choices=["v1", "v15"])
@@ -549,8 +585,10 @@ if __name__ == "__main__":
     parser.add_argument("--parsing_mode", type=str, default="jaw")
     parser.add_argument("--left_cheek_width", type=int, default=90)
     parser.add_argument("--right_cheek_width", type=int, default=90)
-    parser.add_argument("--avatar_id", type=str, default=None)
-    parser.add_argument("--force_recreate", action="store_true")
+    parser.add_argument("--avatar_id", type=str, required=True,
+                        help="Identifier of the prebuilt avatar assets to load")
+    parser.add_argument("--avatar_root", type=str, default=None,
+                        help="Optional override root directory where avatar caches are stored")
     parser.add_argument("--no_audio_playback", action="store_true",
                         help="Disable local audio playback during streaming")
     parser.add_argument("--lookahead_chunks", type=int, default=0,

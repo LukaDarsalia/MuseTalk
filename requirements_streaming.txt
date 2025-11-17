@@ -1,0 +1,29 @@
+# Lean streaming inference requirements (no MMLab stack)
+# Choose torch build separately before installing these (see README)
+# Remove tensorflow/tensorboard to keep environment small.
+
+# Core model/runtime
+diffusers==0.30.2
+accelerate==0.28.0
+numpy==1.23.5
+opencv-python==4.9.0.80
+transformers==4.39.2
+huggingface_hub==0.30.2
+librosa==0.11.0
+einops==0.8.1
+soundfile==0.12.1
+sounddevice==0.5.3
+
+# Optional UI / demo
+gradio==5.24.0
+
+# Utilities
+gdown
+requests
+imageio[ffmpeg]
+omegaconf
+ffmpeg-python
+moviepy
+
+# You will manually install a Torch build, e.g.:
+# pip install torch==2.2.1 torchvision==0.17.1 torchaudio==2.2.1 --index-url https://download.pytorch.org/whl/cu121

@@ -18,3 +18,5 @@ ffplay*
 debug
 exp_out
 .gradio
+avatar_venv
+testing_avatar_creation

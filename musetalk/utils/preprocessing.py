@@ -1,22 +1,23 @@
-import sys
-from face_detection import FaceAlignment,LandmarksType
-from os import listdir, path
-import subprocess
-import numpy as np
-import cv2
 import pickle
-import os
-import json
-from mmpose.apis import inference_topdown, init_model
-from mmpose.structures import merge_data_samples
+
+import cv2
+import numpy as np
 import torch
 from tqdm import tqdm
 
-# initialize the mmpose model
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-config_file = './musetalk/utils/dwpose/rtmpose-l_8xb32-270e_coco-ubody-wholebody-384x288.py'
-checkpoint_file = './models/dwpose/dw-ll_ucoco_384.pth'
-model = init_model(config_file, checkpoint_file, device=device)
+from face_detection import FaceAlignment, LandmarksType
+from mmpose.apis import inference_topdown, init_model
+from mmpose.structures import merge_data_samples
+
+_CONFIG_FILE = './musetalk/utils/dwpose/rtmpose-l_8xb32-270e_coco-ubody-wholebody-384x288.py'
+_CHECKPOINT_FILE = './models/dwpose/dw-ll_ucoco_384.pth'
+
+_MMPPOSE_MODEL = init_model(
+    _CONFIG_FILE,
+    _CHECKPOINT_FILE,
+    device='cuda' if torch.cuda.is_available() else 'cpu',
+)
+
 
 # initialize the face detection model
 device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -44,8 +45,6 @@ def get_bbox_range(img_list,upperbondrange =0):
     frames = read_imgs(img_list)
     batch_size_fa = 1
     batches = [frames[i:i + batch_size_fa] for i in range(0, len(frames), batch_size_fa)]
-    coords_list = []
-    landmarks = []
     if upperbondrange != 0:
         print('get key_landmark and face bounding boxes with the bbox_shift:',upperbondrange)
     else:
@@ -53,7 +52,7 @@ def get_bbox_range(img_list,upperbondrange =0):
     average_range_minus = []
     average_range_plus = []
     for fb in tqdm(batches):
-        results = inference_topdown(model, np.asarray(fb)[0])
+        results = inference_topdown(_MMPPOSE_MODEL, np.asarray(fb)[0])
         results = merge_data_samples(results)
         keypoints = results.pred_instances.keypoints
         face_land_mark= keypoints[0][23:91]
@@ -86,7 +85,6 @@ def get_landmark_and_bbox(img_list,upperbondrange =0):
     batch_size_fa = 1
     batches = [frames[i:i + batch_size_fa] for i in range(0, len(frames), batch_size_fa)]
     coords_list = []
-    landmarks = []
     if upperbondrange != 0:
         print('get key_landmark and face bounding boxes with the bbox_shift:',upperbondrange)
     else:
@@ -94,7 +92,7 @@ def get_landmark_and_bbox(img_list,upperbondrange =0):
     average_range_minus = []
     average_range_plus = []
     for fb in tqdm(batches):
-        results = inference_topdown(model, np.asarray(fb)[0])
+        results = inference_topdown(_MMPPOSE_MODEL, np.asarray(fb)[0])
         results = merge_data_samples(results)
         keypoints = results.pred_instances.keypoints
         face_land_mark= keypoints[0][23:91]

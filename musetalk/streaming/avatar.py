@@ -8,7 +8,7 @@ import shutil
 import threading
 import time
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 import cv2
 import numpy as np
@@ -16,7 +16,6 @@ import torch
 from tqdm import tqdm
 
 from musetalk.utils.blending import get_image_blending, get_image_prepare_material
-from musetalk.utils.preprocessing import get_landmark_and_bbox, read_imgs
 from musetalk.utils.utils import datagen
 
 
@@ -74,13 +73,14 @@ class Avatar:
     def __init__(
         self,
         avatar_id: str,
-        video_path: str,
+        video_path: Optional[str],
         bbox_shift: int,
         preparation: bool,
         config: AvatarConfig,
         runtime: AvatarRuntime,
         interactive: bool = True,
         force_recreate: bool = False,
+        avatar_path_override: Optional[str] = None,
     ) -> None:
         self.avatar_id = avatar_id
         self.video_path = video_path
@@ -92,10 +92,13 @@ class Avatar:
         self.force_recreate = force_recreate
 
         # Paths
-        if self.config.version == "v15":
-            base_path = os.path.join(self.config.result_root, self.config.version, "avatars", avatar_id)
+        if avatar_path_override is not None:
+            base_path = avatar_path_override
         else:
-            base_path = os.path.join(self.config.result_root, "avatars", avatar_id)
+            if self.config.version == "v15":
+                base_path = os.path.join(self.config.result_root, self.config.version, "avatars", avatar_id)
+            else:
+                base_path = os.path.join(self.config.result_root, "avatars", avatar_id)
 
         self.avatar_path = base_path
         self.full_imgs_path = os.path.join(self.avatar_path, "full_imgs")
@@ -124,6 +127,22 @@ class Avatar:
         self.mask_coords_list_cycle: Optional[list] = None
 
         self._init_assets()
+
+    # ---------------------------------------------------------------------
+    # Internal helpers
+    # ---------------------------------------------------------------------
+    @staticmethod
+    def _read_image_sequence(paths: List[str]) -> List[np.ndarray]:
+        frames: List[np.ndarray] = []
+        if not paths:
+            return frames
+        print(f"loading {len(paths)} image(s) from disk...")
+        for img_path in tqdm(paths, desc="load_imgs"):
+            frame = cv2.imread(img_path)
+            if frame is None:
+                raise FileNotFoundError(f"unable to read image: {img_path}")
+            frames.append(frame)
+        return frames
 
     # ---------------------------------------------------------------------
     # Preparation utilities
@@ -165,7 +184,8 @@ class Avatar:
             raise FileNotFoundError(f"Missing avatar metadata at {self.avatar_info_path}")
         with open(self.avatar_info_path, "r") as f:
             avatar_info = json.load(f)
-        if avatar_info.get("bbox_shift") != self.avatar_info["bbox_shift"]:
+        expected_bbox_shift = self.avatar_info["bbox_shift"]
+        if avatar_info.get("bbox_shift") != expected_bbox_shift:
             if self.force_recreate:
                 shutil.rmtree(self.avatar_path)
                 self._prepare_fresh_avatar()
@@ -178,6 +198,9 @@ class Avatar:
                     raise RuntimeError("Avatar configuration mismatch; aborting.")
             else:
                 raise RuntimeError("Avatar configuration mismatch; set force_recreate=True to rebuild.")
+        self.avatar_info = avatar_info
+        if not self.video_path:
+            self.video_path = avatar_info.get("video_path")
 
     def _load_cached_material(self) -> None:
         if not os.path.exists(self.latents_out_path):
@@ -187,17 +210,20 @@ class Avatar:
             self.coord_list_cycle = pickle.load(f)
         input_img_list = glob.glob(os.path.join(self.full_imgs_path, "*.[jpJP][pnPN]*[gG]"))
         input_img_list = sorted(input_img_list, key=lambda x: int(os.path.splitext(os.path.basename(x))[0]))
-        self.frame_list_cycle = read_imgs(input_img_list)
+        self.frame_list_cycle = self._read_image_sequence(input_img_list)
         with open(self.mask_coords_path, "rb") as f:
             self.mask_coords_list_cycle = pickle.load(f)
         input_mask_list = glob.glob(os.path.join(self.mask_out_path, "*.[jpJP][pnPN]*[gG]"))
         input_mask_list = sorted(input_mask_list, key=lambda x: int(os.path.splitext(os.path.basename(x))[0]))
-        self.mask_list_cycle = read_imgs(input_mask_list)
+        self.mask_list_cycle = self._read_image_sequence(input_mask_list)
 
     def _prepare_material(self) -> None:
         print("preparing data materials ... ...")
         with open(self.avatar_info_path, "w") as f:
             json.dump(self.avatar_info, f)
+
+        if not self.video_path:
+            raise ValueError("video_path must be provided when preparing avatar assets.")
 
         if os.path.isfile(self.video_path):
             video2imgs(self.video_path, self.full_imgs_path, ext=".png")
@@ -207,6 +233,9 @@ class Avatar:
         input_img_list = sorted(glob.glob(os.path.join(self.full_imgs_path, "*.[jpJP][pnPN]*[gG]")))
 
         print("extracting landmarks...")
+        # Import here to avoid pulling heavy dependencies when only loading avatars.
+        from musetalk.utils.preprocessing import get_landmark_and_bbox
+
         coord_list, frame_list = get_landmark_and_bbox(input_img_list, self.bbox_shift)
 
         input_latent_list = []
